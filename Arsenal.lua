@@ -1,5 +1,5 @@
 -- =====================================================================
--- 💎 MIKU HUB x ARSENAL INTEGRATION v15.0 (HIGHLIGHT ESP + AIM)
+-- 💎 MIKU HUB x ARSENAL INTEGRATION v16.0 (HIGHLIGHT ESP + AIM + TP)
 -- Giao diện: Miku Hub | Phím tắt: [P] hoặc nút Mini
 -- =====================================================================
 
@@ -25,6 +25,7 @@ local MIKU_COLOR = Color3.fromRGB(57, 197, 187) -- Teal Miku
 _G.EspHighlight = false
 _G.AutoGhim = false
 _G.AutoFire = false
+_G.AutoTeleport = false -- Tính năng Teleport Beta (Bám sau lưng 1 stud)
 
 local ARSENAL_MAX_DISTANCE = 150
 local FIRE_MAX_DISTANCE = 1500
@@ -156,9 +157,10 @@ end)
 
 -- Vòng lặp Render chính
 RunService.RenderStepped:Connect(function()
+    local targetEnemy = getNearestVisibleEnemy()
+
     -- 1. Auto Ghim (Arsenal 1)[cite: 2]
     if _G.AutoGhim then
-        local targetEnemy = getNearestVisibleEnemy()
         if targetEnemy and targetEnemy.Character and targetEnemy.Character:FindFirstChild("Head") then
             local headPos = targetEnemy.Character.Head.Position
             local camPos = camera.CFrame.Position
@@ -166,7 +168,23 @@ RunService.RenderStepped:Connect(function()
         end
     end
 
-    -- 2. Auto Fire (Arsenal 2)[cite: 3]
+    -- 2. Auto Teleport (Beta) - Dịch chuyển bám sau lưng 1 stud kẻ địch đang bị ghim
+    if _G.AutoTeleport then
+        if targetEnemy and targetEnemy.Character then
+            local enemyRoot = targetEnemy.Character:FindFirstChild("HumanoidRootPart")
+            local myCharacter = player.Character
+            if enemyRoot and myCharacter then
+                local myRoot = myCharacter:FindFirstChild("HumanoidRootPart")
+                if myRoot then
+                    -- Lấy vị trí phía sau lưng kẻ địch (dựa theo trục LookVector của nhân vật địch trừ đi 1 stud)
+                    local behindCFrame = enemyRoot.CFrame * CFrame.new(0, 0, 1)
+                    myRoot.CFrame = behindCFrame
+                end
+            end
+        end
+    end
+
+    -- 3. Auto Fire (Arsenal 2)[cite: 3]
     if _G.AutoFire and isAimingAtPlayer() and not isClicking then
         isClicking = true
         VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
@@ -176,7 +194,7 @@ RunService.RenderStepped:Connect(function()
         isClicking = false
     end
 
-    -- 3. Cập nhật Highlight ESP
+    -- 4. Cập nhật Highlight ESP
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= player then
             updateHighlight(p)
@@ -276,7 +294,7 @@ Title.BackgroundTransparency = 1
 Title.Position = UDim2.new(0, 12, 0, 0)
 Title.Size = UDim2.new(1, -20, 1, 0)
 Title.Font = Enum.Font.GothamBold
-Title.Text = "MIKU HUB x ARSENAL (HIGHLIGHT ESP)"
+Title.Text = "MIKU HUB x ARSENAL (HIGHLIGHT ESP + TP)"
 Title.TextColor3 = MIKU_COLOR
 Title.TextSize = 14
 Title.TextXAlignment = Enum.TextXAlignment.Left
@@ -418,6 +436,10 @@ createPhoneToggle(PageArsenal, "🎯 Auto Ghim Mục Tiêu", _G.AutoGhim, functi
     _G.AutoGhim = state
 end)
 
+createPhoneToggle(PageArsenal, "📍 Auto Teleport (Beta - Sau Lưng)", _G.AutoTeleport, function(state)
+    _G.AutoTeleport = state
+end)
+
 createPhoneToggle(PageArsenal, "🔥 Auto Fire (Tự Động Bắn)", _G.AutoFire, function(state)
     _G.AutoFire = state
 end)
@@ -439,4 +461,4 @@ UserInputService.InputBegan:Connect(function(input, gp)
     if input.KeyCode == TOGGLE_KEY then toggleMenu() end
 end)
 
-print("🎯 Miku Hub x Arsenal (Highlight ESP) đã sẵn sàng!")
+print("🎯 Miku Hub x Arsenal (Highlight ESP + Teleport Beta) đã sẵn sàng!")
