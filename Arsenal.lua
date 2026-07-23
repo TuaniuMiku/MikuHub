@@ -1,5 +1,5 @@
 -- =====================================================================
--- 💎 MIKU HUB x ARSENAL INTEGRATION v16.0 (HIGHLIGHT ESP + AIM + TP)
+-- 💎 MIKU HUB x ARSENAL INTEGRATION v16.6 (FIXED AUTO FIRE CLICK)
 -- Giao diện: Miku Hub | Phím tắt: [P] hoặc nút Mini
 -- =====================================================================
 
@@ -25,11 +25,10 @@ local MIKU_COLOR = Color3.fromRGB(57, 197, 187) -- Teal Miku
 _G.EspHighlight = false
 _G.AutoGhim = false
 _G.AutoFire = false
-_G.AutoTeleport = false -- Tính năng Teleport Beta (Bám sau lưng 1 stud)
+_G.AutoTeleport = false
 
 local ARSENAL_MAX_DISTANCE = 150
-local FIRE_MAX_DISTANCE = 1500
-local CLICK_COOLDOWN = 0.001
+local CLICK_COOLDOWN = 0.001 -- Delay 1ms
 local isClicking = false
 
 local highlights = {}
@@ -39,20 +38,70 @@ local function isEnemy(p)
     return p.Team ~= player.Team
 end
 
-local function isVisible(myRoot, targetHead, targetCharacter)
+-- 🛠️ HỆ THỐNG QUÉT ĐA ĐIỂM (MULTI-POINT RAYCAST)
+local function isVisible(targetCharacter)
+    local origin = camera.CFrame.Position
+    local partsToCheck = {"Head", "UpperTorso", "LowerTorso", "Torso", "HumanoidRootPart"}
+    
     local raycastParams = RaycastParams.new()
     raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-    raycastParams.FilterDescendantsInstances = {player.Character}
-    local origin = myRoot.Position
-    local direction = targetHead.Position - origin
-    local raycastResult = workspace:Raycast(origin, direction, raycastParams)
-    if raycastResult then
-        return raycastResult.Instance:IsDescendantOf(targetCharacter)
+    
+    local filterList = {player.Character}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if not isEnemy(p) and p.Character then
+            table.insert(filterList, p.Character)
+        end
     end
-    return false
+    raycastParams.FilterDescendantsInstances = filterList
+
+    for _, partName in ipairs(partsToCheck) do
+        local part = targetCharacter:FindFirstChild(partName)
+        if part then
+            local direction = part.Position - origin
+            local result = workspace:Raycast(origin, direction, raycastParams)
+            
+            if result and result.Instance:IsDescendantOf(targetCharacter) then
+                return true, part
+            end
+        end
+    end
+    
+    return false, nil
 end
 
 local function getNearestVisibleEnemy()
+    local myCharacter = player.Character
+    if not myCharacter then return nil, nil end
+    local myRoot = myCharacter:FindFirstChild("HumanoidRootPart")
+    local myHumanoid = myCharacter:FindFirstChildOfClass("Humanoid")
+    if not myRoot or not myHumanoid or myHumanoid.Health <= 0 then return nil, nil end
+
+    local nearestEnemy = nil
+    local targetPartToAim = nil
+    local shortestDistance = ARSENAL_MAX_DISTANCE
+
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= player and isEnemy(p) and p.Character then
+            local char = p.Character
+            local humanoid = char:FindFirstChildOfClass("Humanoid")
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if root and humanoid and humanoid.Health > 0 then
+                local distance = (root.Position - myRoot.Position).Magnitude
+                if distance < shortestDistance then
+                    local visible, visPart = isVisible(char)
+                    if visible then
+                        shortestDistance = distance
+                        nearestEnemy = p
+                        targetPartToAim = visPart
+                    end
+                end
+            end
+        end
+    end
+    return nearestEnemy, targetPartToAim
+end
+
+local function getNearestEnemyAny()
     local myCharacter = player.Character
     if not myCharacter then return nil end
     local myRoot = myCharacter:FindFirstChild("HumanoidRootPart")
@@ -60,20 +109,18 @@ local function getNearestVisibleEnemy()
     if not myRoot or not myHumanoid or myHumanoid.Health <= 0 then return nil end
 
     local nearestEnemy = nil
-    local shortestDistance = ARSENAL_MAX_DISTANCE
+    local shortestDistance = math.huge
 
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= player and isEnemy(p) and p.Character then
             local char = p.Character
-            local head = char:FindFirstChild("Head")
+            local enemyRoot = char:FindFirstChild("HumanoidRootPart")
             local humanoid = char:FindFirstChildOfClass("Humanoid")
-            if head and humanoid and humanoid.Health > 0 then
-                local distance = (head.Position - myRoot.Position).Magnitude
+            if enemyRoot and humanoid and humanoid.Health > 0 then
+                local distance = (enemyRoot.Position - myRoot.Position).Magnitude
                 if distance < shortestDistance then
-                    if isVisible(myRoot, head, char) then
-                        shortestDistance = distance
-                        nearestEnemy = p
-                    end
+                    shortestDistance = distance
+                    nearestEnemy = p
                 end
             end
         end
@@ -81,29 +128,6 @@ local function getNearestVisibleEnemy()
     return nearestEnemy
 end
 
-local function isAimingAtPlayer()
-    local rayOrigin = camera.CFrame.Position
-    local rayDirection = camera.CFrame.LookVector * FIRE_MAX_DISTANCE
-    local raycastParams = RaycastParams.new()
-    if player.Character then
-        raycastParams.FilterDescendantsInstances = {player.Character}
-        raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-    end
-    local result = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
-    if result and result.Instance then
-        local hitModel = result.Instance:FindFirstAncestorOfClass("Model")
-        if hitModel then
-            local targetPlayer = Players:GetPlayerFromCharacter(hitModel)
-            if targetPlayer and targetPlayer ~= player then
-                local humanoid = hitModel:FindFirstChildOfClass("Humanoid")
-                if humanoid and humanoid.Health > 0 then return true end
-            end
-        end
-    end
-    return false
-end
-
--- Hệ thống Highlight ESP (Đỏ khi bị che, Xanh lá khi thấy)
 local function updateHighlight(p)
     if not p.Character or not isEnemy(p) or not _G.EspHighlight then
         if highlights[p] then
@@ -115,10 +139,9 @@ local function updateHighlight(p)
 
     local char = p.Character
     local humanoid = char:FindFirstChildOfClass("Humanoid")
-    local head = char:FindFirstChild("Head")
     local myRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
 
-    if not humanoid or humanoid.Health <= 0 or not head or not myRoot then
+    if not humanoid or humanoid.Health <= 0 or not myRoot then
         if highlights[p] then
             highlights[p]:Destroy()
             highlights[p] = nil
@@ -137,13 +160,12 @@ local function updateHighlight(p)
         highlights[p] = hl
     end
 
-    -- Kiểm tra vật cản bằng Raycast
-    local visible = isVisible(myRoot, head, char)
+    local visible, _ = isVisible(char)
     if visible then
-        highlights[p].FillColor = Color3.fromRGB(0, 255, 0)     -- Xanh lá (Không có chướng ngại vật)
+        highlights[p].FillColor = Color3.fromRGB(0, 255, 0)
         highlights[p].OutlineColor = Color3.fromRGB(0, 200, 0)
     else
-        highlights[p].FillColor = Color3.fromRGB(255, 0, 0)     -- Đỏ (Có vật cản chặn)
+        highlights[p].FillColor = Color3.fromRGB(255, 0, 0)
         highlights[p].OutlineColor = Color3.fromRGB(200, 0, 0)
     end
 end
@@ -157,26 +179,25 @@ end)
 
 -- Vòng lặp Render chính
 RunService.RenderStepped:Connect(function()
-    local targetEnemy = getNearestVisibleEnemy()
+    local targetEnemy, aimPart = getNearestVisibleEnemy()
 
-    -- 1. Auto Ghim (Arsenal 1)[cite: 2]
+    -- 1. Auto Ghim (Ghim thẳng vào bộ phận lộ diện)
     if _G.AutoGhim then
-        if targetEnemy and targetEnemy.Character and targetEnemy.Character:FindFirstChild("Head") then
-            local headPos = targetEnemy.Character.Head.Position
+        if targetEnemy and aimPart then
             local camPos = camera.CFrame.Position
-            camera.CFrame = CFrame.new(camPos, headPos)
+            camera.CFrame = CFrame.new(camPos, aimPart.Position)
         end
     end
 
-    -- 2. Auto Teleport (Beta) - Dịch chuyển bám sau lưng 1 stud kẻ địch đang bị ghim
+    -- 2. Auto Teleport
     if _G.AutoTeleport then
-        if targetEnemy and targetEnemy.Character then
-            local enemyRoot = targetEnemy.Character:FindFirstChild("HumanoidRootPart")
+        local targetEnemyAny = getNearestEnemyAny()
+        if targetEnemyAny and targetEnemyAny.Character then
+            local enemyRoot = targetEnemyAny.Character:FindFirstChild("HumanoidRootPart")
             local myCharacter = player.Character
             if enemyRoot and myCharacter then
                 local myRoot = myCharacter:FindFirstChild("HumanoidRootPart")
                 if myRoot then
-                    -- Lấy vị trí phía sau lưng kẻ địch (dựa theo trục LookVector của nhân vật địch trừ đi 1 stud)
                     local behindCFrame = enemyRoot.CFrame * CFrame.new(0, 0, 1)
                     myRoot.CFrame = behindCFrame
                 end
@@ -184,14 +205,16 @@ RunService.RenderStepped:Connect(function()
         end
     end
 
-    -- 3. Auto Fire (Arsenal 2)[cite: 3]
-    if _G.AutoFire and isAimingAtPlayer() and not isClicking then
-        isClicking = true
-        VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
-        task.wait(0.02)
-        VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
-        task.wait(CLICK_COOLDOWN)
-        isClicking = false
+    -- 3. Auto Fire: Sử dụng cách click chuẩn của Arsenal, đổi điều kiện thành "khi đang tìm thấy mục tiêu để ghim"
+    if _G.AutoFire and not isClicking then
+        if targetEnemy and aimPart then
+            isClicking = true
+            VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+            task.wait(0.02)
+            VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+            task.wait(CLICK_COOLDOWN)
+            isClicking = false
+        end
     end
 
     -- 4. Cập nhật Highlight ESP
@@ -294,7 +317,7 @@ Title.BackgroundTransparency = 1
 Title.Position = UDim2.new(0, 12, 0, 0)
 Title.Size = UDim2.new(1, -20, 1, 0)
 Title.Font = Enum.Font.GothamBold
-Title.Text = "MIKU HUB x ARSENAL (HIGHLIGHT ESP + TP)"
+Title.Text = "MIKU HUB x ARSENAL (LOCKED AUTO FIRE)"
 Title.TextColor3 = MIKU_COLOR
 Title.TextSize = 14
 Title.TextXAlignment = Enum.TextXAlignment.Left
@@ -421,7 +444,6 @@ UIListLayout_Arsenal.Parent = PageArsenal
 UIListLayout_Arsenal.SortOrder = Enum.SortOrder.LayoutOrder
 UIListLayout_Arsenal.Padding = UDim.new(0, 8)
 
--- Các tùy chọn mặc định đều tắt
 createPhoneToggle(PageArsenal, "✨ Highlight ESP (Đỏ/Xanh)", _G.EspHighlight, function(state)
     _G.EspHighlight = state
     if not state then
@@ -461,4 +483,4 @@ UserInputService.InputBegan:Connect(function(input, gp)
     if input.KeyCode == TOGGLE_KEY then toggleMenu() end
 end)
 
-print("🎯 Miku Hub x Arsenal (Highlight ESP + Teleport Beta) đã sẵn sàng!")
+print("🎯 Miku Hub x Arsenal (Locked Auto Fire) đã sẵn sàng!")
