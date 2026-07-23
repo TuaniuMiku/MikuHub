@@ -1,5 +1,5 @@
 -- =====================================================================
--- 💎 MIKU HUB x ARSENAL INTEGRATION v16.6 (FIXED AUTO FIRE CLICK)
+-- 💎 MIKU HUB v18.0 x ARSENAL INTEGRATION (FIX UI TOGGLE KEY)
 -- Giao diện: Miku Hub | Phím tắt: [P] hoặc nút Mini
 -- =====================================================================
 
@@ -23,15 +23,19 @@ local MIKU_COLOR = Color3.fromRGB(57, 197, 187) -- Teal Miku
 -- ⚙️ CẤU HÌNH MẶC ĐỊNH LÀ TẮT (FALSE)
 -- ==========================================================
 _G.EspHighlight = false
+_G.EspTeammate = false
 _G.AutoGhim = false
 _G.AutoFire = false
 _G.AutoTeleport = false
 
 local ARSENAL_MAX_DISTANCE = 150
+local TELEPORT_MAX_DISTANCE = 1500
 local CLICK_COOLDOWN = 0.001 -- Delay 1ms
 local isClicking = false
 
 local highlights = {}
+local teammateHighlights = {}
+local toggleCallbacks = {} -- Lưu các hàm update UI khi đổi trạng thái qua phím tắt
 
 local function isEnemy(p)
     if not player.Team or not p.Team then return true end
@@ -109,7 +113,7 @@ local function getNearestEnemyAny()
     if not myRoot or not myHumanoid or myHumanoid.Health <= 0 then return nil end
 
     local nearestEnemy = nil
-    local shortestDistance = math.huge
+    local shortestDistance = TELEPORT_MAX_DISTANCE
 
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= player and isEnemy(p) and p.Character then
@@ -129,44 +133,82 @@ local function getNearestEnemyAny()
 end
 
 local function updateHighlight(p)
+    -- ESP Địch
     if not p.Character or not isEnemy(p) or not _G.EspHighlight then
         if highlights[p] then
             highlights[p]:Destroy()
             highlights[p] = nil
         end
-        return
-    end
-
-    local char = p.Character
-    local humanoid = char:FindFirstChildOfClass("Humanoid")
-    local myRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-
-    if not humanoid or humanoid.Health <= 0 or not myRoot then
-        if highlights[p] then
-            highlights[p]:Destroy()
-            highlights[p] = nil
-        end
-        return
-    end
-
-    if not highlights[p] or highlights[p].Parent ~= char then
-        if highlights[p] then highlights[p]:Destroy() end
-        local hl = Instance.new("Highlight")
-        hl.Name = "MikuHighlight"
-        hl.Adornee = char
-        hl.Parent = char
-        hl.FillTransparency = 0.5
-        hl.OutlineTransparency = 0
-        highlights[p] = hl
-    end
-
-    local visible, _ = isVisible(char)
-    if visible then
-        highlights[p].FillColor = Color3.fromRGB(0, 255, 0)
-        highlights[p].OutlineColor = Color3.fromRGB(0, 200, 0)
     else
-        highlights[p].FillColor = Color3.fromRGB(255, 0, 0)
-        highlights[p].OutlineColor = Color3.fromRGB(200, 0, 0)
+        local char = p.Character
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        local myRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+
+        if not humanoid or humanoid.Health <= 0 or not myRoot then
+            if highlights[p] then
+                highlights[p]:Destroy()
+                highlights[p] = nil
+            end
+        else
+            if not highlights[p] or highlights[p].Parent ~= char then
+                if highlights[p] then highlights[p]:Destroy() end
+                local hl = Instance.new("Highlight")
+                hl.Name = "MikuHighlightEnemy"
+                hl.Adornee = char
+                hl.Parent = char
+                hl.FillTransparency = 0.5
+                hl.OutlineTransparency = 0
+                highlights[p] = hl
+            end
+
+            local visible, _ = isVisible(char)
+            if visible then
+                highlights[p].FillColor = Color3.fromRGB(0, 255, 0)
+                highlights[p].OutlineColor = Color3.fromRGB(0, 200, 0)
+            else
+                highlights[p].FillColor = Color3.fromRGB(255, 0, 0)
+                highlights[p].OutlineColor = Color3.fromRGB(200, 0, 0)
+            end
+        end
+    end
+
+    -- ESP Đồng Đội
+    if not p.Character or isEnemy(p) or not _G.EspTeammate then
+        if teammateHighlights[p] then
+            teammateHighlights[p]:Destroy()
+            teammateHighlights[p] = nil
+        end
+    else
+        local char = p.Character
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        local myRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+
+        if not humanoid or humanoid.Health <= 0 or not myRoot then
+            if teammateHighlights[p] then
+                teammateHighlights[p]:Destroy()
+                teammateHighlights[p] = nil
+            end
+        else
+            if not teammateHighlights[p] or teammateHighlights[p].Parent ~= char then
+                if teammateHighlights[p] then teammateHighlights[p]:Destroy() end
+                local hl = Instance.new("Highlight")
+                hl.Name = "MikuHighlightTeammate"
+                hl.Adornee = char
+                hl.Parent = char
+                hl.FillTransparency = 0.5
+                hl.OutlineTransparency = 0
+                teammateHighlights[p] = hl
+            end
+
+            local visible, _ = isVisible(char)
+            if visible then
+                teammateHighlights[p].FillColor = Color3.fromRGB(0, 150, 255)
+                teammateHighlights[p].OutlineColor = Color3.fromRGB(0, 100, 200)
+            else
+                teammateHighlights[p].FillColor = Color3.fromRGB(138, 43, 226)
+                teammateHighlights[p].OutlineColor = Color3.fromRGB(100, 20, 180)
+            end
+        end
     end
 end
 
@@ -174,6 +216,10 @@ Players.PlayerRemoving:Connect(function(p)
     if highlights[p] then
         highlights[p]:Destroy()
         highlights[p] = nil
+    end
+    if teammateHighlights[p] then
+        teammateHighlights[p]:Destroy()
+        teammateHighlights[p] = nil
     end
 end)
 
@@ -198,8 +244,11 @@ RunService.RenderStepped:Connect(function()
             if enemyRoot and myCharacter then
                 local myRoot = myCharacter:FindFirstChild("HumanoidRootPart")
                 if myRoot then
-                    local behindCFrame = enemyRoot.CFrame * CFrame.new(0, 0, 1)
-                    myRoot.CFrame = behindCFrame
+                    local distance = (enemyRoot.Position - myRoot.Position).Magnitude
+                    if distance <= TELEPORT_MAX_DISTANCE then
+                        local behindCFrame = enemyRoot.CFrame * CFrame.new(0, 0, 1)
+                        myRoot.CFrame = behindCFrame
+                    end
                 end
             end
         end
@@ -251,7 +300,7 @@ local function perfectDrag(frame, handle)
 end
 
 -- ==========================================================
--- 🎨 KHỞI TẠO GIAO DIỆN MIKU HUB
+-- 🎨 KHỞI TẠO GIAO DIỆN MIKU HUB v18.0
 -- ==========================================================
 if CoreGui:FindFirstChild("MikuHubArsenal") then CoreGui.MikuHubArsenal:Destroy() end
 
@@ -317,7 +366,7 @@ Title.BackgroundTransparency = 1
 Title.Position = UDim2.new(0, 12, 0, 0)
 Title.Size = UDim2.new(1, -20, 1, 0)
 Title.Font = Enum.Font.GothamBold
-Title.Text = "MIKU HUB x ARSENAL (LOCKED AUTO FIRE)"
+Title.Text = "MIKU HUB v18.0 x ARSENAL"
 Title.TextColor3 = MIKU_COLOR
 Title.TextSize = 14
 Title.TextXAlignment = Enum.TextXAlignment.Left
@@ -370,7 +419,7 @@ ContentFrame.Position = UDim2.new(0, 126, 0, 44)
 ContentFrame.Size = UDim2.new(1, -134, 1, -52)
 ContentFrame.ZIndex = 2
 
-local function createPhoneToggle(parent, titleText, defaultState, callback)
+local function createPhoneToggle(identifier, parent, titleText, defaultState, callback)
     local SwitchContainer = Instance.new("Frame")
     SwitchContainer.Parent = parent
     SwitchContainer.BackgroundColor3 = Color3.fromRGB(16, 30, 35)
@@ -417,9 +466,7 @@ local function createPhoneToggle(parent, titleText, defaultState, callback)
     Thumb.ZIndex = 4
     Instance.new("UICorner", Thumb).CornerRadius = UDim.new(1, 0)
 
-    local isOn = defaultState or false
-    ToggleTrack.MouseButton1Click:Connect(function()
-        isOn = not isOn
+    local function setVisualState(isOn, noCallback)
         local targetPos = isOn and UDim2.new(1, -19, 0.5, 0) or UDim2.new(0, 3, 0.5, 0)
         local targetColor = isOn and MIKU_COLOR or Color3.fromRGB(40, 50, 55)
         local strokeColor = isOn and MIKU_COLOR or Color3.fromRGB(35, 65, 70)
@@ -428,8 +475,25 @@ local function createPhoneToggle(parent, titleText, defaultState, callback)
         TweenService:Create(ToggleTrack, TweenInfo.new(0.2), {BackgroundColor3 = targetColor}):Play()
         TweenService:Create(ContainerStroke, TweenInfo.new(0.2), {Color = strokeColor}):Play()
 
-        callback(isOn)
+        if not noCallback then
+            callback(isOn)
+        end
+    end
+
+    local isOn = defaultState or false
+    ToggleTrack.MouseButton1Click:Connect(function()
+        isOn = not isOn
+        setVisualState(isOn, false)
     end)
+
+    if identifier then
+        toggleCallbacks[identifier] = function(newState)
+            if isOn ~= newState then
+                isOn = newState
+                setVisualState(isOn, true)
+            end
+        end
+    end
 end
 
 local PageArsenal = Instance.new("ScrollingFrame")
@@ -444,7 +508,7 @@ UIListLayout_Arsenal.Parent = PageArsenal
 UIListLayout_Arsenal.SortOrder = Enum.SortOrder.LayoutOrder
 UIListLayout_Arsenal.Padding = UDim.new(0, 8)
 
-createPhoneToggle(PageArsenal, "✨ Highlight ESP (Đỏ/Xanh)", _G.EspHighlight, function(state)
+createPhoneToggle("EspHighlight", PageArsenal, "✨ Highlight ESP Địch (Đỏ/Xanh)", _G.EspHighlight, function(state)
     _G.EspHighlight = state
     if not state then
         for p, hl in pairs(highlights) do
@@ -454,15 +518,25 @@ createPhoneToggle(PageArsenal, "✨ Highlight ESP (Đỏ/Xanh)", _G.EspHighlight
     end
 end)
 
-createPhoneToggle(PageArsenal, "🎯 Auto Ghim Mục Tiêu", _G.AutoGhim, function(state)
+createPhoneToggle("EspTeammate", PageArsenal, "✨ Highlight ESP Đồng Đội (Xanh Dương/Tím)", _G.EspTeammate, function(state)
+    _G.EspTeammate = state
+    if not state then
+        for p, hl in pairs(teammateHighlights) do
+            hl:Destroy()
+            teammateHighlights[p] = nil
+        end
+    end
+end)
+
+createPhoneToggle("AutoGhim", PageArsenal, "🎯 Auto Ghim Mục Tiêu", _G.AutoGhim, function(state)
     _G.AutoGhim = state
 end)
 
-createPhoneToggle(PageArsenal, "📍 Auto Teleport (Beta - Sau Lưng)", _G.AutoTeleport, function(state)
+createPhoneToggle("AutoTeleport", PageArsenal, "📍 Auto Teleport [Insert] (Max 1500 Studs)", _G.AutoTeleport, function(state)
     _G.AutoTeleport = state
 end)
 
-createPhoneToggle(PageArsenal, "🔥 Auto Fire (Tự Động Bắn)", _G.AutoFire, function(state)
+createPhoneToggle("AutoFire", PageArsenal, "🔥 Auto Fire [End] (Tự Động Bắn)", _G.AutoFire, function(state)
     _G.AutoFire = state
 end)
 
@@ -480,7 +554,19 @@ end
 MiniBtn.MouseButton1Click:Connect(toggleMenu)
 UserInputService.InputBegan:Connect(function(input, gp)
     if gp then return end
-    if input.KeyCode == TOGGLE_KEY then toggleMenu() end
+    if input.KeyCode == TOGGLE_KEY then
+        toggleMenu()
+    elseif input.KeyCode == Enum.KeyCode.End then
+        _G.AutoFire = not _G.AutoFire
+        if toggleCallbacks["AutoFire"] then
+            toggleCallbacks["AutoFire"](_G.AutoFire)
+        end
+    elseif input.KeyCode == Enum.KeyCode.Insert then
+        _G.AutoTeleport = not _G.AutoTeleport
+        if toggleCallbacks["AutoTeleport"] then
+            toggleCallbacks["AutoTeleport"](_G.AutoTeleport)
+        end
+    end
 end)
 
-print("🎯 Miku Hub x Arsenal (Locked Auto Fire) đã sẵn sàng!")
+print("🎯 MIKU HUB v18.0 x Arsenal đã sẵn sàng!")
